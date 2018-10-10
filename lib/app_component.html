@@ -1,0 +1,9 @@
+<material-button raised (click)="createEvent()">
+	Create Event
+</material-button>
+<material-button raised (click)="deleteEvent()">
+	Delete Event
+</material-button>
+<div style="height: 600px;">
+	<week-view [dayCount]="6" [startHour]="7" [endHour]="20" [events]="events" (rangeSelection)="onRangeSelectionChanged($event)" (eventSelection)="onEventSelectionChanged($event)"></week-view>
+</div>
