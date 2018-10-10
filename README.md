@@ -9,7 +9,7 @@ It seems like there is no easy to use tool available to just create a simple wor
 ## Current state
 Development has just started so there is not much. A week-view component has been created where you can add and delete tasks. Thats it for now.
 
-![Week view preview](https://github.com/bennyboer/deployment-manager/docs/weekplan.gif)
+![Week view preview](https://github.com/bennyboer/deployment-manager/blob/master/docs/weekplan.gif)
 
 ## Getting started
 This is a web application using [Angular Dart](https://angulardart.org) and lateron will even feature a server which will provide the business logic.
