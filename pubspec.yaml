@@ -1,8 +1,8 @@
 name: deployment_manager
-description: A web app that uses AngularDart Components
-# version: 1.0.0
+description: A deployment manager with the task to find the best work schedule for everyone.
+version: 0.1.0
 # homepage: https://www.example.com
-# author: Benjamin Eder <email@example.com>
+author: Benjamin Eder <barny.eder@gmail.com>
 
 environment:
   sdk: '>=2.0.0 <3.0.0'
