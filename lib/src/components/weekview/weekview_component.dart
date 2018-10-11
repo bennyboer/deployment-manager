@@ -10,6 +10,9 @@ import 'package:deployment_manager/src/components/weekview/event/weekview_event.
 class WeekViewComponent implements OnInit, OnDestroy {
   static final int _DEFAULT_FONT_SIZE = 16;
 
+  /// Maximum day in a range of monday to sunday = [0; 6] -> 6 is last day.
+  static final int _MAX_DAY = 6;
+
   // TODO Add support for i18n
   static final List<String> _WEEK_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
@@ -49,6 +52,7 @@ class WeekViewComponent implements OnInit, OnDestroy {
 
   /// Events are split up for each day for a efficient lookup.
   Map<int, List<_DayEventPart>> _eventsPerDay;
+  List<int> _columnCountPerDay;
 
   /*
    * INPUT ATTRIBUTES
@@ -310,13 +314,14 @@ class WeekViewComponent implements OnInit, OnDestroy {
     double inset = 3 * pixelRatio;
 
     if (_eventsPerDay != null) {
-      List<_DayEventPart> eventHolders = _eventsPerDay[day];
+      List<_DayEventPart> eventParts = _eventsPerDay[day];
+      int columnCount = _columnCountPerDay[day];
 
-      if (eventHolders != null && eventHolders.isNotEmpty) {
+      if (eventParts != null && eventParts.isNotEmpty) {
         double hourHeight = bounds.height / (_endHour - _startHour);
 
         // Draw each event.
-        for (var part in eventHolders) {
+        for (var part in eventParts) {
           WeekViewEvent event = part.holder.event;
 
           // Validate event.
@@ -347,9 +352,9 @@ class WeekViewComponent implements OnInit, OnDestroy {
           var height = endY - startY;
 
           var columnInset = 0.0;
-          if (part.columnCount > 1) {
+          if (columnCount > 1) {
             // There are overlaying events. Draw event in its own column.
-            width /= part.columnCount;
+            width /= columnCount;
             columnInset = part.column * width;
           }
 
@@ -684,10 +689,6 @@ class WeekViewComponent implements OnInit, OnDestroy {
         return box1.zIndex - box2.zIndex;
       });
 
-      list.forEach((box) {
-        print(box.zIndex);
-      });
-
       return list;
     }
 
@@ -728,6 +729,7 @@ class WeekViewComponent implements OnInit, OnDestroy {
   void set events(List<WeekViewEvent> events) {
     _eventsPerDay = new HashMap<int, List<_DayEventPart>>();
 
+    // Split events to day parts.
     for (var event in events) {
       var holder = _EventHolder(event);
       for (int day = event.startDay; day <= event.endDay; day++) {
@@ -735,55 +737,71 @@ class WeekViewComponent implements OnInit, OnDestroy {
       }
     }
 
-    // Check whether events are overlaying.
-    for (var holders in _eventsPerDay.values) {
-      for (var h1 in holders) {
-        for (var h2 in holders) {
-          if (h1 != h2 && h1.column == h2.column && _areEventHoldersOverlaying(h1, h2)) {
-            h1.columnCount++;
-            h2.columnCount++;
+    _columnCountPerDay = List.filled(_MAX_DAY + 1, 0);
+    for (var dayParts in _eventsPerDay.values) {
+      if (dayParts != null && dayParts.isNotEmpty) {
+        // Sort day parts by their length. If they are equal, sort which ones underlying event is earlier.
+        dayParts.sort((part1, part2) {
+          int result = part2.length.compareTo(part1.length);
 
-            h2.column++; // holder 2 is now in the next column.
+          if (result == 0) {
+            // Compare the parts underlying events start dates.
+            result = _compareStartDates(part1.holder.event.startHour,
+                part1.holder.event.startMinute,
+                part2.holder.event.startHour,
+                part2.holder.event.startMinute);
           }
+
+          return result;
+        });
+
+        // Check if day part events are overlaying and in this case modify the column.
+        var columnLookup = HashMap<int, List<_DayEventPart>>();
+        int maxColumn = 0;
+        for (var dayPart in dayParts) {
+          bool isOrdered = false;
+          int column = 0;
+          var columnParts = columnLookup.putIfAbsent(column, () => List<_DayEventPart>());
+
+          while (!isOrdered) {
+            if (columnParts.isEmpty || !columnParts.any((otherPart) => _areDayPartsOverlaying(dayPart, otherPart))) {
+              isOrdered = true;
+            } else {
+              // Day parts overlap.
+              columnParts = columnLookup.putIfAbsent(++column, () => List<_DayEventPart>()); // Get next column parts
+            }
+          }
+
+          dayPart.column = column;
+
+          if (column > maxColumn) {
+            maxColumn = column;
+          }
+
+          columnParts.add(dayPart);
         }
+
+        _columnCountPerDay[dayParts.first.day] = maxColumn + 1;
       }
     }
 
     _invalidate();
   }
 
-  /// Check if two event holders [h1] and [h2] are overlaying each other.
-  bool _areEventHoldersOverlaying(_DayEventPart h1, _DayEventPart h2) {
-    var e1 = h1.holder.event;
-    var e2 = h2.holder.event;
+  bool _areDayPartsOverlaying(_DayEventPart part1, _DayEventPart part2) => _intervalsOverlap(part1.offset, part1.offset + part1.length, part2.offset, part2.offset + part2.length);
 
-    List<double> hours1 = _getHoursFromEvent(e1, h1.day);
-    List<double> hours2 = _getHoursFromEvent(e2, h2.day);
+  /// Check if two intervals [a; b] and [x; z] are overlaying each other.
+  bool _intervalsOverlap(double a, double b, double x, double z) => a <= z && x <= b;
 
-    var startHour1 = hours1[0];
-    var endHour1 = hours1[1];
+  /// Compare which of the two is first or equal.
+  int _compareStartDates(int startHour1, int startMinute1, int startHour2, int startMinute2) {
+    int result = startHour1.compareTo(startHour2);
 
-    var startHour2 = hours2[0];
-    var endHour2 = hours2[1];
-
-    return (startHour1 >= startHour2 && startHour1 <= endHour2) || (endHour1 <= endHour2 && endHour1 >= startHour2);
-  }
-
-  List<double> _getHoursFromEvent(WeekViewEvent event, int day) {
-    double startHour = event.startHour + event.startMinute / 60;
-    double endHour = event.endHour + event.endMinute / 60;
-
-    if (event.startDay == event.endDay) {
-      return [startHour, endHour];
-    } else {
-      if (day == event.startDay) {
-        return [startHour, 24.0];
-      } else if (day == event.endDay) {
-        return [0.0, endHour];
-      } else {
-        return [0.0, 24.0];
-      }
+    if (result == 0) {
+      result = startMinute1.compareTo(startMinute2);
     }
+
+    return result;
   }
 
   @Output("rangeSelection")
@@ -808,9 +826,36 @@ class _DayEventPart {
   final _EventHolder holder;
   final int day;
   int column = 0;
-  int columnCount = 1;
 
-  _DayEventPart(this.holder, this.day);
+  double _length = 0.0;
+  double _offset = 0.0;
+
+  _DayEventPart(this.holder, this.day){
+    _init();
+  }
+
+  void _init() {
+    var event = holder.event;
+
+    double start = 0.0;
+    double end = 24.0;
+
+    if (day == event.startDay) {
+      start = event.startHour + event.startMinute / 60;
+    }
+    if (day == event.endDay){
+      end = event.endHour + event.startMinute / 60;
+    }
+
+    _offset = start;
+    _length = end - start;
+  }
+
+
+  /// Length of the event on this day in hours.
+  double get length => _length;
+
+  double get offset => _offset;
 
 }
 
